@@ -8,12 +8,20 @@ import settings, os
 class _ImportExport:
     def get_models(self):
         imex_models = []
-        app = __import__(settings.IMEX_APP + '.imex')
-        for ob_name in dir(app.imex):
-            ob = getattr(app.imex, ob_name)
-            if inherits_from(ob, 'ImExBase'):
-                imex_models.append(ob)
-        return sorted(imex_models, key=lambda mod: mod.imex_order)
+        import_str = settings.IMEX_APP + '.imex'
+        try:
+            app = __import__(import_str)
+            for ob_name in dir(app.imex):
+                ob = getattr(app.imex, ob_name)
+                if inherits_from(ob, 'ImExBase'):
+                    imex_models.append(ob)
+            return sorted(imex_models, key=lambda mod: mod.imex_order)
+        except Exception, e:
+            tb = traceback.format_exc().strip('\r\n')
+            self._log('TRACEBACK:\n%s' % tb)
+            msg = 'Error importing %s: %s' % (import_str, str(e))
+            self._log(msg)
+            raise Exception(msg)
 
 class ReadXl(_ImportExport):
     def __init__(self, fname, log):
@@ -30,10 +38,10 @@ class ReadXl(_ImportExport):
             for sheet_model in sheet_models:
                 if sheet_model.import_sheet:
                     self._import_sheet(sheet_model)
-        except Exception:
+        except Exception, e:
             tb = traceback.format_exc().strip('\r\n')
             self._log('TRACEBACK:\n%s' % tb)
-            msg = 'Error on sheet %s, row %d' % (self._sheet_name, self._row + 1)
+            msg = 'Error on sheet %s, row %d: %s' % (self._sheet_name, self._row + 1, str(e))
             self._log(msg)
             raise Exception(msg)
         else:
@@ -122,13 +130,13 @@ class WriteXl(_ImportExport):
         self.success = False
         try:
             for export_model in export_models:
-                self._log('Exporting data to %s' % export_model.__name__)
+                self._log('Exporting data for %s' % export_model.__name__)
                 self._write_model(export_model)
         except Exception, e:
+            traceback.print_exc()
             tb = traceback.format_exc().strip('\r\n')
             self._log('TRACEBACK:\n%s' % tb)
             msg = 'Error on sheet %s, row %d: %s' % (self._sheet, self._row, str(e))
-#             self._log(msg)
             raise Exception(msg)
         else:
             self.fname = 'tmp.xlsx'
@@ -139,7 +147,7 @@ class WriteXl(_ImportExport):
             except IOError:
                 raise Exception('ERROR: writing to "%s" failed, file may be open' % self.fname)
             else:
-                self._log('writing output file')
+                self._log('Writing output file')
                 self.success = True
         
     def _write_model(self, sheet_model):

@@ -19,7 +19,6 @@ def perform_export(processor_id):
     try:
         writer = imex.WriteXl(processor.add_line)
     except Exception, e:
-        traceback.print_exc()
         processor.errors = 'ERROR: %s' % str(e)
     else:
         f_tmp = open(writer.fname, 'r')

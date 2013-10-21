@@ -53,9 +53,9 @@ class Process(viewb.TemplateBase):
     
     def export(self):
         processor = m.Process.objects.create(action='EX')
-        successful = m.Process.objects.filter(successful=True)
+        successful = m.Process.objects.filter(complete=True, successful=True, action='EX')
         if successful.exists():
-            expected_time = successful.aggregate(avg_time = models.Avg('time_taken'))['avg_time']
+            expected_time = successful.aggregate(expected_time = models.Max('time_taken'))['expected_time']
             self._context['expected_ms'] = '%0.0f' % ((expected_time * 1000) + 1500)
         self._context['media_url'] = settings.MEDIA_URL
         self._context['json_url'] = '%s/%d.json' % (reverse('rest-%s-%s-list' % ('imex', 'Process')), processor.id)
