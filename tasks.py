@@ -9,6 +9,7 @@ import traceback
 
 @celery.task
 def perform_export(processor_id):
+    delete_old_processes(processor_id)
     processors = Imex.models.Process.objects.filter(id=processor_id)
     if not processors.exists():
         msg = 'Processor id=%d' % processor_id
@@ -45,6 +46,9 @@ def perform_import(fname, delete_first):
         context['info'] = logger.get_log()
     return context
 
+def delete_old_processes(pid):
+    for p in Imex.models.Process.objects.filter(id__lt=pid - 1):
+        p.delete()
 
 
 

@@ -21,8 +21,19 @@ class Process(models.Model):
     
     def add_line(self, line):
         self.log += line + '\n'
-        self.save()
+        self.save()    
+    
+    def delete(self, *args, **kwargs):
+        storage, path = None, None
+        try:
+            storage, path = self.imex_file.storage, self.imex_file.path
+        except:
+            pass
+        super(Process, self).delete(*args, **kwargs)
+        if storage and path:
+            storage.delete(path)
     
     class Meta:
         verbose_name_plural = 'Processes'
         verbose_name = 'Process'
+        ordering = ['id']
