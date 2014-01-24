@@ -183,7 +183,7 @@ class WriteXl(_ImportExport):
         exportextra = sheet_model.ExportExtra(ws, col+1)
         exportextra.add_headings(top_offset)
             
-        for (item_id, item) in enumerate(sheet_model.model.objects.all()):
+        for (item_id, item) in enumerate(sheet_model.main_model.objects.all()):
             self._row = item_id + top_offset + 1
             for (col, field) in enumerate(fields):
                 value = getattr(item, field)
