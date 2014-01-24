@@ -4,6 +4,7 @@ from django.db import models
 import inspect, traceback
 from django.core.exceptions import ObjectDoesNotExist
 import settings, os
+from time import time
 
 class _ImportExport:
     def get_models(self):
@@ -28,7 +29,8 @@ class ReadXl(_ImportExport):
         self._log = log
         self._log('loading "%s"' % fname)
         self._wb = openpyxl.load_workbook(fname)
-#         self._log('Worksheets: %s' % str(self._wb.get_sheet_names()))
+        self._sheet_names = self._wb.get_sheet_names()
+        self._log('Worksheets: %r' % self._sheet_names)
         self._unichar_finder = re.compile(r'[^\x00-\xff]')
         self._sheet = 'unknown'
         self._row = 0
@@ -37,31 +39,42 @@ class ReadXl(_ImportExport):
         try:
             for sheet_model in sheet_models:
                 if sheet_model.import_sheet:
-                    self._import_sheet(sheet_model)
-        except Exception, e:
+                    self._import_sheet(sheet_model, sheet_model.__name__)
+        except Exception:
             tb = traceback.format_exc().strip('\r\n')
-            self._log('TRACEBACK:\n%s' % tb)
-            msg = 'Error on sheet %s, row %d: %s' % (self._sheet_name, self._row + 1, str(e))
+            self._log('TRACEBACK:')
+            for line in tb.split('\n'):
+                self._log(line)
+            msg = 'Error on sheet %s, row %d' % (self._sheet_name, self._row + 1)
             self._log(msg)
             raise Exception(msg)
         else:
             self.success = True
      
-    def _import_sheet(self, sheet_model):
-        self._sheet_name = sheet_model.__name__
+    def _import_sheet(self, sheet_model, sname, try_again = True):
+        if sname not in self._sheet_names:
+            self._log('"%s" is not a valid sheet name' % sname)
+            if try_again:
+                sname2 = '%s1' % sname
+                self._log('trying "%s"' % sname2)
+                self._import_sheet(sheet_model, sname2, False)
+            return
+        self._sheet_name = sname
         fields = sheet_model.imex_fields
         ws = self._wb.get_sheet_by_name(name = self._sheet_name)
         self._row = sheet_model.imex_top_offset
         headings = self._get_headings(ws)
-#         self._log('column names: %s' % str(headings))
+        if None in headings:
+            del headings[None]
+#         self._log('column names: %r' % headings)
         extra = sheet_model.ImportExtra(ws, headings)
         self._row = self._row + 1
         import_count = 0
         for self._row in range(self._row, ws.get_highest_row()):
-            id = ws.cell(row=self._row, column=headings['id']).value
-            if not isinstance(id, int):
+            xl_id = ws.cell(row=self._row, column=headings['xl_id']).value
+            if not isinstance(xl_id, int):
                 continue
-            finds = sheet_model.model.objects.filter(id = id)
+            finds = sheet_model.model.objects.filter(xl_id = xl_id)
             if finds.count() == 1:
                 main_item = finds[0]
             elif finds.count() == 0:
@@ -71,8 +84,8 @@ class ReadXl(_ImportExport):
                     continue
                 main_item = sheet_model.model()
             else:
-                raise Exception('ERROR: already multiple items with the same id(%d) in %s' % 
-                                            (id, self._sheet_name))
+                raise Exception('ERROR: already multiple items with the same xl_id(%d) in %s' % 
+                                            (xl_id, self._sheet_name))
             for field in fields:
                 value = ws.cell(row=self._row, column=headings[field]).value
 #                 self._log('%s: %s' % (field, self._clean_string(value)))
@@ -80,9 +93,9 @@ class ReadXl(_ImportExport):
                 if isinstance(field_info, models.fields.related.ForeignKey):
                     if value is not None:
                         try:
-                            value = field_info.rel.to.objects.get(id = value)
+                            value = field_info.rel.to.objects.get(xl_id = value)
                         except ObjectDoesNotExist:
-                            raise Exception('ERROR: item with id = %d does not exist in %s' % 
+                            raise Exception('ERROR: item with xl_id = %d does not exist in %s' % 
                                             (value, field_info.rel.to.__name__))
                 else:
                     value = self._get_value(getattr(main_item, field), value)
@@ -130,8 +143,10 @@ class WriteXl(_ImportExport):
         self.success = False
         try:
             for export_model in export_models:
-                self._log('Exporting data for %s' % export_model.__name__)
-                self._write_model(export_model)
+                self._log('Exporting data to %s' % export_model.__name__)
+                start = time()
+                export_count = self._write_model(export_model)
+                self._log('    Exported %d items in %0.3fs' % (export_count, (time()-start)))
         except Exception, e:
             traceback.print_exc()
             tb = traceback.format_exc().strip('\r\n')
@@ -140,8 +155,8 @@ class WriteXl(_ImportExport):
             raise Exception(msg)
         else:
             self.fname = 'tmp.xlsx'
-            if settings.ON_SERVER:
-                fname = os.path.join(settings.SITE_ROOT,  self.fname)
+            #if settings.ON_SERVER:
+                #fname = os.path.join(settings.SITE_ROOT,  self.fname)
             try:
                 self._wb.save(filename = self.fname)
             except IOError:
@@ -175,11 +190,16 @@ class WriteXl(_ImportExport):
                 if hasattr(value, '__call__'):
                     value = value()
                 if isinstance(value, models.Model):
-                    value = value.id
+                    value = value.xl_id
                 elif isinstance(value, str) or isinstance(value, unicode):
                     value = value.strip('\r\n').replace('\r', '').replace('\n', ', ')
+                if field =='xl_id' and value == -1:
+                    value = item.id
+                    item.xl_id =item.id
+                    item.save()
                 ws.cell(row = self._row, column=col).value = value
             exportextra.add_row(item, self._row)
+        return item_id
                 
     def _delete_excess_sheets(self):
         for sheet_name in self._wb.get_sheet_names():

@@ -15,8 +15,8 @@ class Process(models.Model):
     log = models.TextField(default='')
     errors = models.TextField(null=True, blank=True)
     time_taken = models.FloatField('Time Taken', default = 0, blank=True)
-    complete = models.BooleanField()
-    successful = models.BooleanField()
+    complete = models.BooleanField(default = False)
+    successful = models.BooleanField(default = False)
     time = models.DateTimeField(auto_now_add=True)
     
     def add_line(self, line):

@@ -2,7 +2,7 @@ import openpyxl
 from django.db import models as db_models
 from django.core.exceptions import ObjectDoesNotExist
 
-default_imex_fields = ['id', 'name', 'description']
+default_imex_fields = ['xl_id', 'name', 'description', 'comment']
 
 class ImportExtra:
     def __init__(self, ws, headings):
@@ -23,9 +23,9 @@ class ImportM2MBase(ImportExtra):
             value = self._ws.cell(row=row, column=comp_col).value
             if value is not None:
                 try:
-                    main_i_field.add(m2m_model.objects.get(id=value))
+                    main_i_field.add(m2m_model.objects.get(xl_id=value))
                 except ObjectDoesNotExist:
-                    raise Exception('ERROR: item with id = %d does not exist in %s' % (value, m2m_model.__name__))
+                    raise Exception('ERROR: item with xl_id = %d does not exist in %s' % (value, m2m_model.__name__))
         
 class ExportExtra(object):
     def __init__(self, ws, firstcol):
@@ -111,7 +111,7 @@ class M2MExport(RedExtra):
         super(M2MExport, self).add_row(main_item, row)
         for (index, item) in enumerate(getattr(main_item, self.m2m_field_name).all()):
             c = self._ws.cell(row = row, column=self._columns[index])
-            c.value = item.id
+            c.value = item.xl_id
 
 class ImExBase:
     imex_fields = default_imex_fields

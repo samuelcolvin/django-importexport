@@ -59,4 +59,7 @@ class Process(viewb.TemplateBase):
             self._context['expected_ms'] = '%0.0f' % ((expected_time * 1000) + 1500)
         self._context['media_url'] = settings.MEDIA_URL
         self._context['json_url'] = '%s/%d.json' % (reverse('rest-%s-%s-list' % ('imex', 'Process')), processor.id)
-        tasks.perform_export.delay(processor.id)
+        tasks.perform_export(processor.id)
+
+
+
