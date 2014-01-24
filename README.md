@@ -7,3 +7,4 @@ django app to export and import data to and from excel (and possibly other forma
 ***TODO:
 
 * use any field for xl_id
+* add import view
