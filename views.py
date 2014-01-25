@@ -6,12 +6,13 @@ import SkeletalDisplay.views_base as viewb
 from django.core.urlresolvers import reverse
 from django.db import models
 import settings
+from django.shortcuts import redirect
 
-worker_funcs=(('export', 'Generate XLSX Export'),)
+actions = (('export', 'Generate XLSX Export'), ('import', None),)
 
-class Imex(viewb.TemplateBase):
-    template_name = 'imex.html'
-    top_active = 'imex'
+class Export(viewb.TemplateBase):
+    template_name = 'export.html'
+    top_active = 'imex_export'
     side_menu = False
     show_crums = False
     
@@ -22,44 +23,103 @@ class Imex(viewb.TemplateBase):
     
     def set_links(self):
         links= []
-        for func_name, label in worker_funcs:
-            links.append({'url': reverse('imex_process', kwargs={'command': func_name}), 'name': label})
+        for func_name, label in actions:
+            if label:
+                links.append({'url': reverse('imex_process', kwargs={'command': func_name}), 'name': label})
         return links
 
-class Process(viewb.TemplateBase):
-    template_name = 'process.html'
-    top_active = 'imex'
+class ExcelUploadForm(forms.Form):
+    xlfile = forms.FileField(
+        label='Select Excel (xlsx) File to Upload',
+        help_text='should be in standard format for this system'
+    )
+
+class Import(viewb.TemplateBase):
+    template_name = 'import.html'
+    top_active = 'imex_import'
     side_menu = False
     show_crums = False
     
     def get_context_data(self, **kw):
-        self._context['expected_ms'] = 0
-        self.choose_func(kw)
+        self._context['title'] = 'Import'
+        self._context['process_url'] =  reverse('imex_process', kwargs={'command': 'import'})
+        self._context['upload_form'] =  ExcelUploadForm()
+        
+        if 'errors' in self.request.session:
+            self._context['errors'] = self.request.session['errors']
         return self._context
     
-    def set_links(self):
-        links= []
-        for func_name, label in worker_funcs:
-            links.append({'url': reverse('imex_process', kwargs={'command': func_name}), 'name': label})
-        return links
+class Process(viewb.TemplateBase):
+    template_name = 'process.html'
+    top_active = 'export'
+    side_menu = False
+    show_crums = False
+    _redirect = None
+    
+    def post(self, request, *args, **kw):
+        page = super(Process, self).get(request, *args, **kw)
+        if self._redirect:
+            return self._redirect
+        return page
+    
+    def get_context_data(self, **kw):
+        self._context['expected_ms'] = 0
+        act = self.choose_func(kw)
+        if not act:
+            return self._context
+        if tasks.CELERY_AVAILABLE:
+            successful = m.Process.objects.filter(complete=True, successful=True, action=act)
+            if successful.exists():
+                expected_time = successful.aggregate(expected_time = models.Max('time_taken'))['expected_time']
+                self._context['expected_ms'] = '%0.0f' % ((expected_time + 1) * 1000)
+            self._context['media_url'] = settings.MEDIA_URL
+            self._context['json_url'] = '%s/%d.json' % (reverse('rest-%s-%s-list' % ('imex', 'Process')), pid)
+        else:
+            processor = m.Process.objects.get(id=self._pid)
+            self._context['info'] = processor.log.split('\n')
+            if processor.errors:
+                self._context['errors'].append(processor.errors)
+            self._context['success'] = ['Document Successfully Uploaded']
+        return self._context
         
     def choose_func(self, kw):
         if 'command' in kw:
             command = kw['command']
-            if command in [func_name for func_name, _ in worker_funcs]:
-                getattr(self, command)()
+            if command in [func_name for func_name, _ in actions]:
+                return getattr(self, 'action_%s' % command)()
             else:
                 self._context['errors'] = ['No function called %s' % command]
     
-    def export(self):
+    def action_export(self):
         processor = m.Process.objects.create(action='EX')
-        successful = m.Process.objects.filter(complete=True, successful=True, action='EX')
-        if successful.exists():
-            expected_time = successful.aggregate(expected_time = models.Max('time_taken'))['expected_time']
-            self._context['expected_ms'] = '%0.0f' % ((expected_time * 1000) + 1500)
-        self._context['media_url'] = settings.MEDIA_URL
-        self._context['json_url'] = '%s/%d.json' % (reverse('rest-%s-%s-list' % ('imex', 'Process')), processor.id)
-        tasks.perform_export(processor.id)
+        self._pid = processor.id
+        tasks.perform_export(self._pid)
+        self._context['download_url'] = m.Process.objects.get(id=self._pid).imex_file.url
+        return 'EX'
+    
+    def action_import(self):
+        error = None
+        if self.request.method == 'POST':
+            error = "No post data"
+        else:
+            form = ExcelUploadForm(self.request.POST, self.request.FILES)
+            if  not form.is_valid():
+                error = "Form not valid"
+            elif not str(self.request.FILES['xlfile']).endswith('.xlsx'):
+                error = 'File must be xlsx, not xls or any other format.'
+        if error:
+            print 'refused'
+            self.request.session['errors'] = [error]
+            self._redirect = redirect(reverse('imex_import'))
+            return
+        p = m.Process.objects.create(action='IM', imex_file = self.request.FILES['xlfile'])
+#                 if delete_first:
+#                     SalesEstimates.worker.delete_before_upload(logger.addline)
+        msg = tasks.perform_import(p.id)
+        if msg:
+            self._context['errors'].append(msg)
+        self._pid = p.id
+        return 'IM'
 
 
 

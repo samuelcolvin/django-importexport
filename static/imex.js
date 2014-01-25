@@ -5,6 +5,7 @@ var interval_ref = null;
 var progress_ref = null;
 $(document).ready(function(){
 	if (json_url != ''){
+		$('#progress-bar-container').show();
 		msg_container = $('.alert-info');
 		err_container = $('.alert-danger');
 		suc_container = $('.alert-success');
