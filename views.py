@@ -8,7 +8,7 @@ from django.db import models
 import settings
 from django.shortcuts import redirect
 
-actions = (('export', 'Generate XLSX Export'), ('import', None),)
+actions = (('imex_export', 'Generate XLSX Export'), ('imex_import', None),)
 
 class Export(viewb.TemplateBase):
     template_name = 'export.html'
@@ -42,22 +42,26 @@ class Import(viewb.TemplateBase):
     
     def get_context_data(self, **kw):
         self._context['title'] = 'Import'
-        self._context['process_url'] =  reverse('imex_process', kwargs={'command': 'import'})
+        self._context['process_url'] =  reverse('imex_process', kwargs={'command': 'imex_import'})
         self._context['upload_form'] =  ExcelUploadForm()
         
         if 'errors' in self.request.session:
             self._context['errors'] = self.request.session['errors']
         return self._context
-    
+
 class Process(viewb.TemplateBase):
     template_name = 'process.html'
-    top_active = 'export'
     side_menu = False
     show_crums = False
     _redirect = None
     
+    def get(self, request, *args, **kw):
+        if 'top_active' in request.session:
+            self.top_active = request.session['top_active']
+        return super(Process, self).get(request, *args, **kw)
+    
     def post(self, request, *args, **kw):
-        page = super(Process, self).get(request, *args, **kw)
+        page = self.get(request, *args, **kw)
         if self._redirect:
             return self._redirect
         return page
@@ -73,33 +77,35 @@ class Process(viewb.TemplateBase):
                 expected_time = successful.aggregate(expected_time = models.Max('time_taken'))['expected_time']
                 self._context['expected_ms'] = '%0.0f' % ((expected_time + 1) * 1000)
             self._context['media_url'] = settings.MEDIA_URL
-            self._context['json_url'] = '%s/%d.json' % (reverse('rest-%s-%s-list' % ('imex', 'Process')), pid)
+            self._context['json_url'] = '%s/%d.json' % (reverse('rest-imex-Process-list'), self._pid)
         else:
             processor = m.Process.objects.get(id=self._pid)
             self._context['info'] = processor.log.split('\n')
             if processor.errors:
-                self._context['errors'].append(processor.errors)
-            self._context['success'] = ['Document Successfully Uploaded']
+                self._context['errors'] = [processor.errors]
+            if processor.successful:
+                self._context['success'] = ['Document Successfully Uploaded']
         return self._context
         
     def choose_func(self, kw):
         if 'command' in kw:
             command = kw['command']
             if command in [func_name for func_name, _ in actions]:
-                return getattr(self, 'action_%s' % command)()
+                return getattr(self, command)()
             else:
                 self._context['errors'] = ['No function called %s' % command]
     
-    def action_export(self):
+    def imex_export(self):
         processor = m.Process.objects.create(action='EX')
         self._pid = processor.id
         tasks.perform_export(self._pid)
         self._context['download_url'] = m.Process.objects.get(id=self._pid).imex_file.url
         return 'EX'
     
-    def action_import(self):
+    def imex_import(self):
+#         import pdb;pdb.set_trace()
         error = None
-        if self.request.method == 'POST':
+        if self.request.method != 'POST':
             error = "No post data"
         else:
             form = ExcelUploadForm(self.request.POST, self.request.FILES)

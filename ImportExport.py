@@ -12,42 +12,54 @@ class _ImportExport:
         import_str = settings.IMEX_APP + '.imex'
         try:
             app = __import__(import_str)
+            perform_before_upload = None
+            if hasattr(app.imex, 'PERFORM_BEFORE_UPLOAD'):
+                perform_before_upload = getattr(app.imex, 'PERFORM_BEFORE_UPLOAD')
             for ob_name in dir(app.imex):
                 ob = getattr(app.imex, ob_name)
                 if inherits_from(ob, 'ImExBase'):
                     imex_models.append(ob)
-            return sorted(imex_models, key=lambda mod: mod.imex_order)
+            return sorted(imex_models, key=lambda mod: mod.imex_order), perform_before_upload
         except Exception, e:
             tb = traceback.format_exc().strip('\r\n')
             self._log('TRACEBACK:\n%s' % tb)
             msg = 'Error importing %s: %s' % (import_str, str(e))
             self._log(msg)
             raise Exception(msg)
+        
+    def raise_error(self, e):
+        traceback.print_exc()
+        tb = traceback.format_exc().strip('\r\n')
+        self._log('TRACEBACK:')
+        [self._log(line) for line in tb.split('\n')]
+        if self._sheet:
+            msg = 'Error on sheet %s, row %d: %r' % (self._sheet, self._row, e)
+        else:
+            msg = 'Error occurred outside sheet processing: %r' % e
+        raise Exception(msg)
 
 class ReadXl(_ImportExport):
     def __init__(self, fname, log):
         self._log = log
+        self.success = False
+        self._sheet = None
+        sheet_models, perform_before_upload = self.get_models()
+        try:
+            perform_before_upload(log)
+        except Exception, e:
+            self.raise_error(e)
         self._log('loading "%s"' % fname)
         self._wb = openpyxl.load_workbook(fname)
         self._sheet_names = self._wb.get_sheet_names()
         self._log('Worksheets: %r' % self._sheet_names)
         self._unichar_finder = re.compile(r'[^\x00-\xff]')
-        self._sheet = 'unknown'
         self._row = 0
-        self.success = False
-        sheet_models = self.get_models()
         try:
             for sheet_model in sheet_models:
                 if sheet_model.import_sheet:
                     self._import_sheet(sheet_model, sheet_model.__name__)
-        except Exception:
-            tb = traceback.format_exc().strip('\r\n')
-            self._log('TRACEBACK:')
-            for line in tb.split('\n'):
-                self._log(line)
-            msg = 'Error on sheet %s, row %d' % (self._sheet_name, self._row + 1)
-            self._log(msg)
-            raise Exception(msg)
+        except Exception, e:
+            self.raise_error(e)
         else:
             self.success = True
      
@@ -74,7 +86,7 @@ class ReadXl(_ImportExport):
             xl_id = ws.cell(row=self._row, column=headings['xl_id']).value
             if not isinstance(xl_id, int):
                 continue
-            finds = sheet_model.model.objects.filter(xl_id = xl_id)
+            finds = sheet_model.main_model.objects.filter(xl_id = xl_id)
             if finds.count() == 1:
                 main_item = finds[0]
             elif finds.count() == 0:
@@ -82,14 +94,14 @@ class ReadXl(_ImportExport):
                     self._log('%s: model can only be edited not created via import, no item found on row %d'
                                % (self._sheet_name, self._row))
                     continue
-                main_item = sheet_model.model()
+                main_item = sheet_model.main_model()
             else:
                 raise Exception('ERROR: already multiple items with the same xl_id(%d) in %s' % 
                                             (xl_id, self._sheet_name))
             for field in fields:
                 value = ws.cell(row=self._row, column=headings[field]).value
 #                 self._log('%s: %s' % (field, self._clean_string(value)))
-                field_info = sheet_model.model._meta.get_field_by_name(field)[0]
+                field_info = sheet_model.main_model._meta.get_field_by_name(field)[0]
                 if isinstance(field_info, models.fields.related.ForeignKey):
                     if value is not None:
                         try:
@@ -103,7 +115,7 @@ class ReadXl(_ImportExport):
             main_item.save()
             import_count += 1
             extra.get_row(main_item, self._row)
-        self._log('imported %d %s' %  (import_count, sheet_model.model._meta.verbose_name_plural))
+        self._log('imported %d %s' %  (import_count, sheet_model.main_model._meta.verbose_name_plural))
             
     def _get_headings(self, ws):
         headings={}
@@ -135,12 +147,12 @@ class ReadXl(_ImportExport):
 class WriteXl(_ImportExport):
     def __init__(self, log):
         self._log = log
+        self.success = False
+        self._sheet = None
         self._wb = openpyxl.Workbook()
-        self._sheet = 'unknown'
         self._row = 0
         self._delete_excess_sheets()
-        export_models = self.get_models()
-        self.success = False
+        export_models, _ = self.get_models()
         try:
             for export_model in export_models:
                 self._log('Exporting data to %s' % export_model.__name__)
@@ -148,11 +160,7 @@ class WriteXl(_ImportExport):
                 export_count = self._write_model(export_model)
                 self._log('    Exported %d items in %0.3fs' % (export_count, (time()-start)))
         except Exception, e:
-            traceback.print_exc()
-            tb = traceback.format_exc().strip('\r\n')
-            self._log('TRACEBACK:\n%s' % tb)
-            msg = 'Error on sheet %s, row %d: %s' % (self._sheet, self._row, str(e))
-            raise Exception(msg)
+            self.raise_error(e)
         else:
             self.fname = 'tmp.xlsx'
             #if settings.ON_SERVER:
