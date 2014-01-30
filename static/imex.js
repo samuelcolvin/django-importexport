@@ -6,7 +6,7 @@ var progress_ref = null;
 $(document).ready(function(){
 	if (json_url != ''){
 		$('#progress-bar-container').show();
-		msg_container = $('.alert-info');
+		msg_container = $('.process-messages');
 		err_container = $('.alert-danger');
 		suc_container = $('.alert-success');
 		link = $('#download-link');
@@ -29,10 +29,14 @@ function process_json(){
 		if (data.complete){
 			clearInterval(interval_ref);
 			if (data.successful){
-				link.show();
 				suc_container.show();
-				suc_container.text('Data successfully exported, click below to download.');
-				link.attr('href', media_url+data.imex_file);
+				if (act == 'IM'){
+					suc_container.text('Data successfully imported.');
+				} else {
+					suc_container.text('Data successfully exported, click below to download.');
+					link.show();
+					link.attr('href', media_url+data.imex_file);
+				}
 			} else {
 				err_container.show();
 				err_container.html(str2html(data.errors));

@@ -66,25 +66,22 @@ class Process(viewb.TemplateBase):
             return self._redirect
         return page
     
+    _act_map = {'imex_export': 'EX', 'imex_import':'IM'}
     def get_context_data(self, **kw):
         self._context['expected_ms'] = 0
-        act = self.choose_func(kw)
-        if not act:
+        if 'command' in kw and kw['command'] in self._act_map:
+            act = self._act_map[kw['command']]
+            self._context['act'] = act
+            prev_successful = m.Process.objects.filter(complete=True, successful=True, action=act)
+            if prev_successful.exists():
+                print 'average_of %s' % ','.join([ '%0.3f' % p.time_taken for p in prev_successful])
+                expected_time = prev_successful.aggregate(expected_time = models.Avg('time_taken'))['expected_time']
+                self._context['expected_ms'] = '%0.0f' % (expected_time * 1000)
+        success = self.choose_func(kw)
+        if not success:
             return self._context
-        if tasks.CELERY_AVAILABLE:
-            successful = m.Process.objects.filter(complete=True, successful=True, action=act)
-            if successful.exists():
-                expected_time = successful.aggregate(expected_time = models.Max('time_taken'))['expected_time']
-                self._context['expected_ms'] = '%0.0f' % ((expected_time + 1) * 1000)
-            self._context['media_url'] = settings.MEDIA_URL
-            self._context['json_url'] = '%s/%d.json' % (reverse('rest-imex-Process-list'), self._pid)
-        else:
-            processor = m.Process.objects.get(id=self._pid)
-            self._context['info'] = processor.log.split('\n')
-            if processor.errors:
-                self._context['errors'] = [processor.errors]
-            if processor.successful:
-                self._context['success'] = ['Document Successfully Uploaded']
+        self._context['media_url'] = settings.MEDIA_URL
+        self._context['json_url'] = '%s/%d.json' % (reverse('rest-imex-Process-list'), self._pid)
         return self._context
         
     def choose_func(self, kw):
@@ -99,11 +96,9 @@ class Process(viewb.TemplateBase):
         processor = m.Process.objects.create(action='EX')
         self._pid = processor.id
         tasks.perform_export(self._pid)
-        self._context['download_url'] = m.Process.objects.get(id=self._pid).imex_file.url
-        return 'EX'
+        return True
     
     def imex_import(self):
-#         import pdb;pdb.set_trace()
         error = None
         if self.request.method != 'POST':
             error = "No post data"
@@ -119,13 +114,11 @@ class Process(viewb.TemplateBase):
             self._redirect = redirect(reverse('imex_import'))
             return
         p = m.Process.objects.create(action='IM', imex_file = self.request.FILES['xlfile'])
-#                 if delete_first:
-#                     SalesEstimates.worker.delete_before_upload(logger.addline)
         msg = tasks.perform_import(p.id)
         if msg:
             self._context['errors'].append(msg)
         self._pid = p.id
-        return 'IM'
+        return True
 
 
 

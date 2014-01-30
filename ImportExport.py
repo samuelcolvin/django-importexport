@@ -112,7 +112,7 @@ class ReadXl(_ImportExport):
                 else:
                     value = self._get_value(getattr(main_item, field), value)
                 setattr(main_item, field, value)
-            main_item.save()
+            main_item.save(hotsave=True)
             import_count += 1
             extra.get_row(main_item, self._row)
         self._log('imported %d %s' %  (import_count, sheet_model.main_model._meta.verbose_name_plural))
