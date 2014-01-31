@@ -165,7 +165,7 @@ class WriteXl(_ImportExport):
         except Exception, e:
             self.raise_error(e)
         else:
-            self.fname = 'tmp.xlsx'
+            self.fname = '/tmp/sales-estimates-export.xlsx'
             try:
                 self._wb.save(filename = self.fname)
             except IOError:
