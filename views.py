@@ -7,8 +7,10 @@ from django.core.urlresolvers import reverse
 from django.db import models
 import settings
 from django.shortcuts import redirect
+import Imex
 
-actions = (('imex_export', 'Generate XLSX Export'), ('imex_import', None),)
+import_groups, export_groups  = Imex.get_imex_groups()
+actions = {'imex_import':import_groups, 'imex_export': export_groups}
 
 class Export(viewb.TemplateBase):
     template_name = 'export.html'
@@ -23,9 +25,8 @@ class Export(viewb.TemplateBase):
     
     def set_links(self):
         links= []
-        for func_name, label in actions:
-            if label:
-                links.append({'url': reverse('imex_process', kwargs={'command': func_name}), 'name': label})
+        for group, label in actions['imex_export']:
+            links.append({'url': reverse('imex_process', kwargs={'command': 'imex_export', 'group': group}), 'name': label})
         return links
 
 class ExcelUploadForm(forms.Form):
@@ -33,6 +34,7 @@ class ExcelUploadForm(forms.Form):
         label='Select Excel (xlsx) File to Upload',
         help_text='should be in standard format for this system'
     )
+    import_group = forms.ChoiceField(widget=forms.RadioSelect, choices=import_groups, label='Import Type', initial=import_groups[0][0])
 
 class Import(viewb.TemplateBase):
     template_name = 'import.html'
@@ -69,14 +71,13 @@ class Process(viewb.TemplateBase):
     _act_map = {'imex_export': 'EX', 'imex_import':'IM'}
     def get_context_data(self, **kw):
         self._context['expected_ms'] = 0
-        if 'command' in kw and kw['command'] in self._act_map:
-            act = self._act_map[kw['command']]
-            self._context['act'] = act
-            prev_successful = m.Process.objects.filter(complete=True, successful=True, action=act)
-            if prev_successful.exists():
-                print 'average_of %s' % ','.join([ '%0.3f' % p.time_taken for p in prev_successful])
-                expected_time = prev_successful.aggregate(expected_time = models.Avg('time_taken'))['expected_time']
-                self._context['expected_ms'] = '%0.0f' % (expected_time * 1000)
+        act = self._act_map[kw['command']]
+        self._context['act'] = act
+        prev_successful = m.Process.objects.filter(complete=True, successful=True, action=act)
+        if prev_successful.exists():
+#             print 'average_of %s' % ','.join([ '%0.3f' % p.time_taken for p in prev_successful])
+            expected_time = prev_successful.aggregate(expected_time = models.Avg('time_taken'))['expected_time']
+            self._context['expected_ms'] = '%0.0f' % (expected_time * 1000)
         success = self.choose_func(kw)
         if not success:
             return self._context
@@ -87,33 +88,39 @@ class Process(viewb.TemplateBase):
     def choose_func(self, kw):
         if 'command' in kw:
             command = kw['command']
-            if command in [func_name for func_name, _ in actions]:
-                return getattr(self, command)()
+            if command in [func_name for func_name, _ in self._act_map.items()]:
+                return getattr(self, command)(kw)
             else:
                 self._context['errors'] = ['No function called %s' % command]
     
-    def imex_export(self):
-        processor = m.Process.objects.create(action='EX')
+    def imex_export(self, kw):
+        group = kw['group']
+        assert group in [g for g, _ in export_groups], \
+            'group %s not found in export_groups: %r' % (group, export_groups)
+        processor = m.Process.objects.create(action='EX', group=group)
         self._pid = processor.id
         tasks.perform_export(self._pid)
         return True
     
-    def imex_import(self):
+    def imex_import(self, kw):
         error = None
         if self.request.method != 'POST':
             error = "No post data"
         else:
             form = ExcelUploadForm(self.request.POST, self.request.FILES)
-            if  not form.is_valid():
+            import_group = form['import_group'].value()
+            if not form.is_valid():
                 error = "Form not valid"
             elif not str(self.request.FILES['xlfile']).endswith('.xlsx'):
                 error = 'File must be xlsx, not xls or any other format.'
+            elif import_group not in [g for g, _ in import_groups]:
+                error = 'Group %s is not one of the import groups: %r' % (import_group, import_groups)
         if error:
             print 'refused'
             self.request.session['errors'] = [error]
             self._redirect = redirect(reverse('imex_import'))
             return
-        p = m.Process.objects.create(action='IM', imex_file = self.request.FILES['xlfile'])
+        p = m.Process.objects.create(action='IM', imex_file = self.request.FILES['xlfile'], group=import_group)
         msg = tasks.perform_import(p.id)
         if msg:
             self._context['errors'].append(msg)

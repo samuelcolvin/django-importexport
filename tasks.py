@@ -37,7 +37,7 @@ def _perform_export(processor_id):
         return msg
     t = time.time()
     try:
-        writer = imex.WriteXl(processor.add_line)
+        writer = imex.WriteXl(processor.add_line, processor.group)
     except Exception, e:
         processor.errors = 'ERROR: %s' % str(e)
     else:
@@ -62,7 +62,7 @@ def _perform_import(processor_id):
         return msg
     t = time.time()
     try:
-        imex.ReadXl(processor.imex_file.path, processor.add_line)
+        imex.ReadXl(processor.imex_file.path, processor.add_line, processor.group)
     except Exception, e:
         processor.errors = 'ERROR: %s' % str(e)
     else:

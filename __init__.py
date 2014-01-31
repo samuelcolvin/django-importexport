@@ -1,6 +1,7 @@
 import openpyxl
 from django.db import models as db_models
 from django.core.exceptions import ObjectDoesNotExist
+import settings
 
 default_imex_fields = ['xl_id', 'name', 'description', 'comment']
 
@@ -37,8 +38,9 @@ class ExportExtra(object):
     
     def add_row(self, main_item, row):
         pass
-    
+
 class RedExtra(ExportExtra):
+    print_color = 'RED'
     def __init__(self, ws, firstcol):
         self._red_columns = [i + firstcol for i in range(len(self.lookups))]
         ExportExtra.__init__(self, ws, firstcol)
@@ -58,7 +60,9 @@ class RedExtra(ExportExtra):
     def add_row(self, main_item, row):
         for index, lookup in enumerate(self.lookups):
             if 'func' in lookup:
-                self.add_red_value(main_item, row, self._red_columns[index], lookup['func'])
+                self.add_red_value(main_item, row, self._red_columns[index], func = lookup['func'])
+            elif 'field' in lookup:
+                self.add_red_value(main_item, row, self._red_columns[index], field = lookup['field'])
     
     def add_1000_formula(self, start_row, put_col, ref_col, sheet_name, get_col='B'):
         for i in range(start_row, 1000):
@@ -78,13 +82,17 @@ class RedExtra(ExportExtra):
         self.set_red(c)
         return c
     
-    def add_red_value(self, main_item, put_row, put_col, func):
+    def add_red_value(self, main_item, put_row, put_col, func=None, field=None):
         c = self._ws.cell(row = put_row, column=put_col)
-        c.value = getattr(main_item, func)()
+        if func:
+            c.value = getattr(main_item, func)()
+        elif field:
+            c.value = getattr(main_item, field)
         self.set_red(c)
                   
     def set_red(self, cell):
-        cell.style.font.color.index = openpyxl.style.Color.RED
+        color = getattr(openpyxl.style.Color, self.print_color, openpyxl.style.Color.RED)
+        cell.style.font.color.index = color
         
 class M2MExport(RedExtra):
     lookups = []
@@ -115,13 +123,27 @@ class M2MExport(RedExtra):
 
 class ImExBase:
     imex_fields = default_imex_fields
+    field_headings = {}
     imex_order = 0
     imex_top_offset = 0
     import_edit_only = False
     import_sheet = True
+    import_groups = []
+    export_groups = []
     
     class ImportExtra(ImportExtra):
         pass
     
     class ExportExtra(ExportExtra):
         pass
+    
+
+def get_imex_app():
+    import_str = settings.IMEX_APP + '.imex'
+    return __import__(import_str)
+
+def get_imex_groups():
+    app = get_imex_app()
+    import_groups = getattr(app.imex, 'IMPORT_GROUPS', (('all', 'Import All'),))
+    export_groups = getattr(app.imex, 'EXPORT_GROUPS', (('all', 'Export All'),))
+    return import_groups, export_groups

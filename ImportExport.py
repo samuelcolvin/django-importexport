@@ -3,18 +3,17 @@ import openpyxl, re
 from django.db import models
 import inspect, traceback
 from django.core.exceptions import ObjectDoesNotExist
-import settings, os
 from time import time
+import Imex
+    
 
 class _ImportExport:
+    _field_name = None
     def get_models(self):
         imex_models = []
-        import_str = settings.IMEX_APP + '.imex'
         try:
-            app = __import__(import_str)
-            perform_before_upload = None
-            if hasattr(app.imex, 'PERFORM_BEFORE_UPLOAD'):
-                perform_before_upload = getattr(app.imex, 'PERFORM_BEFORE_UPLOAD')
+            app = Imex.get_imex_app()
+            perform_before_upload = getattr(app.imex, 'PERFORM_BEFORE_UPLOAD', None)
             for ob_name in dir(app.imex):
                 ob = getattr(app.imex, ob_name)
                 if inherits_from(ob, 'ImExBase'):
@@ -23,7 +22,7 @@ class _ImportExport:
         except Exception, e:
             tb = traceback.format_exc().strip('\r\n')
             self._log('TRACEBACK:\n%s' % tb)
-            msg = 'Error importing %s: %s' % (import_str, str(e))
+            msg = 'Error importing imex app information: %r' % e
             self._log(msg)
             raise Exception(msg)
         
@@ -33,14 +32,15 @@ class _ImportExport:
         self._log('TRACEBACK:')
         [self._log(line) for line in tb.split('\n')]
         if self._sheet:
-            msg = 'Error on sheet %s, row %d: %r' % (self._sheet, self._row, e)
+            msg = 'Error on sheet %s, row %d, field "%s": %r' % (self._sheet, self._row, self._field_name, e)
         else:
             msg = 'Error occurred outside sheet processing: %r' % e
         raise Exception(msg)
 
 class ReadXl(_ImportExport):
-    def __init__(self, fname, log):
+    def __init__(self, fname, log, group):
         self._log = log
+        self._group = group
         self.success = False
         self._sheet = None
         sheet_models, perform_before_upload = self.get_models()
@@ -145,8 +145,9 @@ class ReadXl(_ImportExport):
             return re.sub(self._unichar_finder, '', s)
 
 class WriteXl(_ImportExport):
-    def __init__(self, log):
+    def __init__(self, log, group):
         self._log = log
+        self._group = group
         self.success = False
         self._sheet = None
         self._wb = openpyxl.Workbook()
@@ -155,6 +156,8 @@ class WriteXl(_ImportExport):
         export_models, _ = self.get_models()
         try:
             for export_model in export_models:
+                if self._group not in export_model.export_groups:
+                    continue
                 self._log('Exporting data to %s' % export_model.__name__)
                 start = time()
                 export_count = self._write_model(export_model)
@@ -163,8 +166,6 @@ class WriteXl(_ImportExport):
             self.raise_error(e)
         else:
             self.fname = 'tmp.xlsx'
-            #if settings.ON_SERVER:
-                #fname = os.path.join(settings.SITE_ROOT,  self.fname)
             try:
                 self._wb.save(filename = self.fname)
             except IOError:
@@ -183,7 +184,7 @@ class WriteXl(_ImportExport):
         col = -1
         for (col, field) in enumerate(fields):
             c = ws.cell(row = top_offset, column=col)
-            c.value = field
+            c.value = sheet_model.field_headings.get(field, field)
             c.style.font.bold = True
         for col_dim in ws.column_dimensions.values():
             col_dim.width = 15
@@ -194,6 +195,7 @@ class WriteXl(_ImportExport):
         for (item_id, item) in enumerate(sheet_model.main_model.objects.all()):
             self._row = item_id + top_offset + 1
             for (col, field) in enumerate(fields):
+                self._field_name = field
                 value = getattr(item, field)
                 if hasattr(value, '__call__'):
                     value = value()

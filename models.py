@@ -13,6 +13,7 @@ class Process(models.Model):
     action = models.CharField(max_length=2, choices=(
         ('IM', 'Import'),
         ('EX', 'Export')))
+    group = models.CharField(max_length=100)
     imex_file = models.FileField(upload_to=content_file_name)
     log = models.TextField(default='')
     errors = models.TextField(null=True, blank=True)

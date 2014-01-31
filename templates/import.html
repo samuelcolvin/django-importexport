@@ -6,7 +6,7 @@
 	{% csrf_token %}
 	{{ upload_form.non_form_errors.as_ul }}
 	{{ upload_form|bootstrap }}
-	<p><input type="submit" value="Upload" class="btn btn-default" /></p>
+	<input type="submit" value="Upload" class="btn btn-default" />
 	</form>
 	<p><strong>Importing data will clear any previous calculations.</strong></p>
 {% endblock %}
