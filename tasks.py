@@ -1,7 +1,6 @@
-import openpyxl
+import openpyxl, time, settings
 from django.core.files import File
 import SkeletalDisplay
-import time
 import Imex.ImportExport as imex
 import Imex.models
 import traceback
@@ -14,7 +13,8 @@ if CELERY_AVAILABLE:
         import celery
     except ImportError:
         CELERY_AVAILABLE = False
-        print 'Celery is not available, running imex using threading'
+        if settings.DEBUG:
+            print 'Celery is not available, running imex using threading'
     else:
         @celery.task
         def _perform_export_celery(processor_id):
