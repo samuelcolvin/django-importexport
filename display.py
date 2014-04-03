@@ -1,12 +1,11 @@
-import SkeletalDisplay
+import HotDjango
 import Imex.models as m
 import HotDjango
 
 app_name='imex'
 
 
-class Process(SkeletalDisplay.ModelDisplay):
-    model = m.Process
+class Process(HotDjango.ModelDisplay):
     display = False
     
     class HotTable(HotDjango.ModelSerialiser):

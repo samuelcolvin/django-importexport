@@ -2,7 +2,7 @@ from django import forms
 
 import Imex.models as m
 import Imex.tasks as tasks
-import SkeletalDisplay.views_base as viewb
+import HotDjango.views_base as viewb
 from django.core.urlresolvers import reverse
 from django.db import models
 import settings
