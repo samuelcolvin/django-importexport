@@ -14,7 +14,7 @@ actions = {'imex_import':import_groups, 'imex_export': export_groups}
 
 class Export(viewb.TemplateBase):
     template_name = 'export.html'
-    top_active = 'imex_export'
+    menu_active = 'imex_export'
     side_menu = False
     show_crums = False
     
@@ -38,7 +38,7 @@ class ExcelUploadForm(forms.Form):
 
 class Import(viewb.TemplateBase):
     template_name = 'import.html'
-    top_active = 'imex_import'
+    menu_active = 'imex_import'
     side_menu = False
     show_crums = False
     
@@ -58,8 +58,8 @@ class Process(viewb.TemplateBase):
     _redirect = None
     
     def get(self, request, *args, **kw):
-        if 'top_active' in request.session:
-            self.top_active = request.session['top_active']
+        if 'menu_active' in request.session:
+            self.menu_active = request.session['menu_active']
         return super(Process, self).get(request, *args, **kw)
     
     def post(self, request, *args, **kw):
