@@ -1,12 +1,15 @@
 from django.db import models
 import settings
 from datetime import datetime as dtdt
+import django.utils.formats as django_format
+from django.utils import timezone
 
 def content_file_name(instance, filename):
     ext = '.xlsx'
     if '.' in filename:
         ext = filename[filename.rfind('.'):]
-    now = dtdt.now().strftime(settings.CUSTOM_SHORT_DT_FORMAT)
+    current_tz = timezone.get_current_timezone()
+    now = django_format.date_format(current_tz.localize(dtdt.now()), 'DATETIME_FORMAT') 
     return 'imex_files/imex_%s%s' % (now, ext)
 
 class Process(models.Model):

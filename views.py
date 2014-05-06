@@ -82,7 +82,7 @@ class Process(viewb.TemplateBase):
         if not success:
             return self._context
         self._context['media_url'] = settings.MEDIA_URL
-        self._context['json_url'] = '%s/%d.json' % (reverse('rest-imex-Process-list'), self._pid)
+        self._context['json_url'] = '%s/%d.json' % (reverse('rest-Imex-Process-list'), self._pid)
         return self._context
         
     def choose_func(self, kw):

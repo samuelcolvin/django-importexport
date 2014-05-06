@@ -6,6 +6,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from time import time
 import Imex
     
+class KnownError(Exception):
+    pass
 
 class _ImportExport:
     _field_name = None
@@ -24,7 +26,7 @@ class _ImportExport:
             self._log('TRACEBACK:\n%s' % tb)
             msg = 'Error importing imex app information: %r' % e
             self._log(msg)
-            raise Exception(msg)
+            raise KnownError(msg)
         
     def raise_error(self, e):
         traceback.print_exc()
@@ -35,7 +37,7 @@ class _ImportExport:
             msg = 'Error on sheet %s, row %d, field "%s": %r' % (self._sheet, self._row, self._field_name, e)
         else:
             msg = 'Error occurred outside sheet processing: %r' % e
-        raise Exception(msg)
+        raise KnownError(msg)
 
 class ReadXl(_ImportExport):
     def __init__(self, fname, log, group):
@@ -44,6 +46,7 @@ class ReadXl(_ImportExport):
         self.success = False
         self._sheet = None
         sheet_models, perform_before_upload = self.get_models()
+        # TODO: work with models with no xl_id
         try:
             perform_before_upload(log)
         except Exception, e:
@@ -96,7 +99,7 @@ class ReadXl(_ImportExport):
                     continue
                 main_item = sheet_model.main_model()
             else:
-                raise Exception('ERROR: already multiple items with the same xl_id(%d) in %s' % 
+                raise KnownError('ERROR: already multiple items with the same xl_id(%d) in %s' % 
                                             (xl_id, self._sheet_name))
             for field in fields:
                 value = ws.cell(row=self._row, column=headings[field]).value
@@ -107,7 +110,7 @@ class ReadXl(_ImportExport):
                         try:
                             value = field_info.rel.to.objects.get(xl_id = value)
                         except ObjectDoesNotExist:
-                            raise Exception('ERROR: item with xl_id = %d does not exist in %s' % 
+                            raise KnownError('ERROR: item with xl_id = %d does not exist in %s' % 
                                             (value, field_info.rel.to.__name__))
                 else:
                     value = self._get_value(getattr(main_item, field), value)
@@ -156,7 +159,7 @@ class WriteXl(_ImportExport):
         export_models, _ = self.get_models()
         try:
             for export_model in export_models:
-                if self._group not in export_model.export_groups:
+                if self._group != 'all' and self._group not in export_model.export_groups:
                     continue
                 self._log('Exporting data to %s' % export_model.__name__)
                 start = time()
@@ -165,11 +168,13 @@ class WriteXl(_ImportExport):
         except Exception, e:
             self.raise_error(e)
         else:
-            self.fname = '/tmp/sales-estimates-export.xlsx'
+            self.fname = '/tmp/django-imex-export.xlsx'
             try:
                 self._wb.save(filename = self.fname)
             except IOError:
-                raise Exception('ERROR: writing to "%s" failed, file may be open' % self.fname)
+                raise KnownError('ERROR: writing to "%s" failed, file may be open' % self.fname)
+            except IndexError:
+                raise KnownError('Cannot save empty Worksheet')
             else:
                 self._log('Writing output file')
                 self.success = True
@@ -200,7 +205,10 @@ class WriteXl(_ImportExport):
                 if hasattr(value, '__call__'):
                     value = value()
                 if isinstance(value, models.Model):
-                    value = value.xl_id
+                    if hasattr(value, 'xl_id'):
+                        value = value.xl_id
+                    else:
+                        value = value.id
                 elif isinstance(value, str) or isinstance(value, unicode):
                     value = value.strip('\r\n').replace('\r', '').replace('\n', ', ')
                 if field =='xl_id' and value == -1:

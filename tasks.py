@@ -7,7 +7,7 @@ import traceback
 import threading
 
 # it's assumed that if celery is installed it's running unless celery_available is set to False
-CELERY_AVAILABLE = True
+CELERY_AVAILABLE = False
 if CELERY_AVAILABLE:
     try:
         import celery
@@ -38,8 +38,10 @@ def _perform_export(processor_id):
     t = time.time()
     try:
         writer = imex.WriteXl(processor.add_line, processor.group)
-    except Exception, e:
+    except imex.KnownError, e:
         processor.errors = 'ERROR: %s' % str(e)
+    except Exception:
+        processor.errors = traceback.format_exc()
     else:
         f_tmp = open(writer.fname, 'r')
         processor.imex_file.save(writer.fname, File(f_tmp))

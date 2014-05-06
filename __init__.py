@@ -119,7 +119,10 @@ class M2MExport(RedExtra):
         super(M2MExport, self).add_row(main_item, row)
         for (index, item) in enumerate(getattr(main_item, self.m2m_field_name).all()):
             c = self._ws.cell(row = row, column=self._columns[index])
-            c.value = item.xl_id
+            if hasattr(item, 'xl_id'):
+                c.value = item.xl_id
+            else:
+                c.value = item.id
 
 class ImExBase:
     imex_fields = default_imex_fields
